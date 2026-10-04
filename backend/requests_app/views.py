@@ -8,16 +8,20 @@ from accounts.services import log_action
 from config.errors import ServiceError
 from config.pagination import StandardPagination
 
-from .models import Attachment, Request, RequestCategory, RequestType
+from .models import ApprovalAction, Attachment, Request, RequestCategory, RequestType
 from .serializers import (
     RecentRequestSerializer, RequestCategorySerializer, RequestDetailSerializer,
-    RequestListSerializer, RequestSerializer,
+    RequestListSerializer, RequestSerializer, ReviewListSerializer,
 )
 from .services.access import get_request_for_user
 from .services.attachments import add_attachments
-from .services.dashboard import ARCHIVE_STATUSES, STATUS_GROUPS, recent_requests, requests_summary
-from .services.submit import submit_request
 from .services.changes import cancel_request, edit_request
+from .services.dashboard import ARCHIVE_STATUSES, STATUS_GROUPS, recent_requests, requests_summary
+from .services.manning import manning_check
+from .services.review import decide_request, manning_payload, review_queryset
+from .services.submit import submit_request
+from .services.workflow import is_current_approver
+
 
 def int_param(request, name, default, minimum=1, maximum=50):
     """Read ?name= as an int, clamped to [minimum, maximum]."""
@@ -26,6 +30,27 @@ def int_param(request, name, default, minimum=1, maximum=50):
     except (TypeError, ValueError):
         value = default
     return max(minimum, min(value, maximum))
+
+
+def truthy(value):
+    return value in (True, 1, '1', 'true', 'True', 'on')
+
+
+def detail_response(request, pk):
+    """
+    Full request details. For the current approver it also returns can_decide=True
+    and a LIVE manning check (leave types), so the dialog can show the warning first.
+    """
+    req = get_request_for_user(request.user, pk)
+    data = RequestDetailSerializer(req, context={'request': request}).data
+    data['can_decide'] = is_current_approver(request.user, req)
+    data['manning'] = None
+    if data['can_decide'] and req.request_type.is_leave_type and req.date_from:
+        site = req.user.unit.site if req.user.unit else None
+        res = manning_check(site, req.date_from, req.date_to,
+                            requester=req.user, request=req, checked_by=request.user)
+        data['manning'] = manning_payload(res)
+    return Response(data)
 
 
 # ---------- New request ----------
@@ -82,7 +107,7 @@ class MyRequestsView(generics.ListAPIView):
     """My requests 4.1 — ?status=all|under_review|approved|rejected|cancelled &q= &page="""
     serializer_class = RequestListSerializer
     pagination_class = StandardPagination
-    base_statuses = None   # None = all statuses
+    base_statuses = None
 
     def get_queryset(self):
         qs = (Request.objects.filter(user=self.request.user)
@@ -109,31 +134,29 @@ class ArchiveView(MyRequestsView):
     base_statuses = ARCHIVE_STATUSES
 
 
-# ---------- Details & files ----------
+# ---------- Details, edit, cancel, files ----------
+
 class RequestDetailView(APIView):
     """
-    GET   — My requests 4.3 / Request details 4.1
+    GET   — My requests 4.3 / Request details 4.1 / Review 4.2
     PUT   — Request details 2.1 (edit after return)
     PATCH — Request details 3.1 (cancel: {"status": "CANCELLED", "reason": "..."})
     """
 
-    def _detail(self, request, pk):
-        req = get_request_for_user(request.user, pk)
-        return Response(RequestDetailSerializer(req, context={'request': request}).data)
-
     def get(self, request, pk):
-        return self._detail(request, pk)
+        return detail_response(request, pk)
 
     def put(self, request, pk):
         edit_request(request.user, pk, request.data)
-        return self._detail(request, pk)
+        return detail_response(request, pk)
 
     def patch(self, request, pk):
         if request.data.get('status') != Request.Status.CANCELLED:
             raise ServiceError('E201', 'التعديل الجزئي يدعم الإلغاء فقط', field='status')
         cancel_request(request.user, pk, str(request.data.get('reason', '')).strip())
-        return self._detail(request, pk)
-    
+        return detail_response(request, pk)
+
+
 class AttachmentDownloadView(APIView):
     """My requests 4.4 / Request details 4.2 — ?inline=1 to preview in the browser."""
 
@@ -141,7 +164,7 @@ class AttachmentDownloadView(APIView):
         att = Attachment.objects.filter(pk=pk).first()
         if att is None:
             raise ServiceError('E202', 'المرفق غير موجود', status=404)
-        get_request_for_user(request.user, att.request_id)   # same permission as the request
+        get_request_for_user(request.user, att.request_id)
 
         try:
             file = att.file.open('rb')
@@ -151,3 +174,25 @@ class AttachmentDownloadView(APIView):
         log_action(request.user, 'DOWNLOAD_ATTACHMENT', att, request_id=att.request_id)
         inline = request.query_params.get('inline') == '1'
         return FileResponse(file, as_attachment=not inline, filename=att.file_name)
+
+
+# ---------- Review (leaders) ----------
+
+class ReviewListView(generics.ListAPIView):
+    """Review 4.1 — ?tab=all|new|under_review|awaiting &page="""
+    serializer_class = ReviewListSerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        return review_queryset(self.request.user, self.request.query_params.get('tab', 'all'))
+
+
+class DecisionView(APIView):
+    """Review 2.1 approve / 2.2 reject / 2.3 return — body: {reason, manning_acknowledged}"""
+    decision = None
+
+    def post(self, request, pk):
+        decide_request(request.user, pk, self.decision,
+                       reason=str(request.data.get('reason', '')),
+                       acknowledged=truthy(request.data.get('manning_acknowledged')))
+        return detail_response(request, pk)

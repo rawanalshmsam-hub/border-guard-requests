@@ -118,3 +118,28 @@ class RequestDetailSerializer(RequestSerializer):
 
     def get_can_cancel(self, obj):
         return self._is_owner(obj) and obj.status in (Request.Status.PENDING, Request.Status.PENDING_EDIT)
+    # ---------- Review 4.1 ---------- and 
+# ---------- Review 4.1 ---------- and 
+# ---------- Review 4.1 ----------
+
+class ReviewListSerializer(serializers.ModelSerializer):
+    requester = serializers.SerializerMethodField()
+    request_type_name = serializers.CharField(source='request_type.name', read_only=True)
+    category_name = serializers.CharField(source='request_type.category.name', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    priority_display = serializers.CharField(source='get_priority_display', read_only=True)
+    can_decide = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Request
+        fields = ['id', 'request_number', 'requester', 'request_type_name', 'category_name',
+                  'date_from', 'date_to', 'priority', 'priority_display',
+                  'status', 'status_display', 'manning_warning', 'created_at', 'can_decide']
+
+    def get_requester(self, obj):
+        u = obj.user
+        return {'military_id': u.military_id, 'full_name': u.full_name, 'rank': u.rank,
+                'unit_name': u.unit.name if u.unit else None}
+
+    def get_can_decide(self, obj):
+        return bool(getattr(obj, 'my_turn', False))
