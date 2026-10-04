@@ -6,6 +6,18 @@ S = Request.Status
 UNDER_REVIEW = [S.PENDING, S.PENDING_EDIT]
 APPROVED = [S.APPROVED, S.COMPLETED]
 REJECTED = [S.REJECTED]
+CANCELLED = [S.CANCELLED]
+
+# ?status= filter values (same groups as the stat cards)
+STATUS_GROUPS = {
+    'under_review': UNDER_REVIEW,
+    'approved': APPROVED,
+    'rejected': REJECTED,
+    'cancelled': CANCELLED,
+}
+
+# Archive = closed requests: no further action is possible
+ARCHIVE_STATUSES = APPROVED + REJECTED + CANCELLED
 
 
 def requests_summary(user):

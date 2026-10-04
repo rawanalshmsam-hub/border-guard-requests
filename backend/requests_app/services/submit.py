@@ -17,6 +17,8 @@ OPEN_STATUSES = [Request.Status.PENDING, Request.Status.PENDING_EDIT, Request.St
 MAX_RANGE_DAYS = 365
 
 
+# ---------- shared helpers (used by submit and edit) ----------
+
 def _parse_date(value, field, label):
     if not value:
         raise ServiceError('E201', f'{label} مطلوب', field=field)
@@ -26,32 +28,8 @@ def _parse_date(value, field, label):
         raise ServiceError('E201', f'{label} غير صحيح', field=field)
 
 
-@transaction.atomic
-def submit_request(user, data, files):
-    """
-    API 1.1 — validate, create, run manning check, notify, audit.
-    Everything is inside one transaction: any error => nothing is saved.
-    Returns (request, manning_result or None).
-    """
-    # 1) Requester must be active and belong to a unit
-    if not user.is_active or user.unit_id is None:
-        raise ServiceError('E202', 'حسابك غير مرتبط بوحدة نشطة، راجع مدير النظام')
-    site = user.unit.site
-
-    # 2) Request type + approval chain + someone to approve it
-    try:
-        request_type = RequestType.objects.get(pk=int(data.get('request_type')))
-    except (TypeError, ValueError, RequestType.DoesNotExist):
-        raise ServiceError('E202', 'نوع الطلب غير صحيح', field='request_type')
-
-    first_step = get_step(request_type, 1)
-    if first_step is None:
-        raise ServiceError('E205', 'لا يوجد مسار اعتماد لهذا النوع من الطلبات')
-    approvers = get_approvers(first_step.approver_role, site, exclude_user=user)
-    if not approvers:
-        raise ServiceError('E205', 'لا يوجد معتمد متاح لهذا الطلب في موقعك')
-
-    # 3) Mandatory fields
+def validate_fields(request_type, data):
+    """Mandatory fields per type. Returns a dict of clean values (E201 on error)."""
     reason = str(data.get('reason', '')).strip()
     if not reason:
         raise ServiceError('E201', 'سبب الطلب مطلوب', field='reason')
@@ -71,13 +49,14 @@ def submit_request(user, data, files):
         if (date_to - date_from).days + 1 > MAX_RANGE_DAYS:
             raise ServiceError('E201', f'مدة الطلب لا يمكن أن تتجاوز {MAX_RANGE_DAYS} يوماً', field='date_to')
 
-    # 4) Attachments
-    if request_type.requires_attachment and not files:
-        raise ServiceError('E204', 'هذا الطلب يتطلب إرفاق مستند', field='files')
-    validate_files(files)
+    return {'reason': reason, 'priority': priority, 'date_from': date_from, 'date_to': date_to}
 
-    # 5) Overlapping (dated) or duplicate (undated) request for the same person
+
+def check_overlap(user, request_type, date_from, date_to, exclude_pk=None):
+    """E203 if the same person has an overlapping (dated) or duplicate (undated) open request."""
     mine = Request.objects.filter(user=user, status__in=OPEN_STATUSES)
+    if exclude_pk is not None:
+        mine = mine.exclude(pk=exclude_pk)
     if date_from:
         clash = mine.filter(date_from__lte=date_to, date_to__gte=date_from).first()
     else:
@@ -85,26 +64,66 @@ def submit_request(user, data, files):
     if clash:
         raise ServiceError('E203', f'يوجد طلب آخر متداخل أو مكرر: {clash.request_number}')
 
-    # 6) Create (temporary number, then the real one from the ID)
+
+def approvers_for_step(req, site):
+    """Users who must act on the request's current step (E205 if nobody can)."""
+    step = get_step(req.request_type, req.current_step)
+    if step is None:
+        raise ServiceError('E205', 'لا يوجد مسار اعتماد لهذا النوع من الطلبات')
+    approvers = get_approvers(step.approver_role, site, exclude_user=req.user)
+    if not approvers:
+        raise ServiceError('E205', 'لا يوجد معتمد متاح لهذا الطلب في موقعك')
+    return approvers
+
+
+# ---------- API 1.1 ----------
+
+@transaction.atomic
+def submit_request(user, data, files):
+    """
+    Validate, create, run manning check, notify, audit — all in one transaction.
+    Returns (request, manning_result or None).
+    """
+    if not user.is_active or user.unit_id is None:
+        raise ServiceError('E202', 'حسابك غير مرتبط بوحدة نشطة، راجع مدير النظام')
+    site = user.unit.site
+
+    try:
+        request_type = RequestType.objects.get(pk=int(data.get('request_type')))
+    except (TypeError, ValueError, RequestType.DoesNotExist):
+        raise ServiceError('E202', 'نوع الطلب غير صحيح', field='request_type')
+
+    # Check the chain before creating anything
+    first_step = get_step(request_type, 1)
+    if first_step is None:
+        raise ServiceError('E205', 'لا يوجد مسار اعتماد لهذا النوع من الطلبات')
+    approvers = get_approvers(first_step.approver_role, site, exclude_user=user)
+    if not approvers:
+        raise ServiceError('E205', 'لا يوجد معتمد متاح لهذا الطلب في موقعك')
+
+    fields = validate_fields(request_type, data)
+
+    if request_type.requires_attachment and not files:
+        raise ServiceError('E204', 'هذا الطلب يتطلب إرفاق مستند', field='files')
+    validate_files(files)
+
+    check_overlap(user, request_type, fields['date_from'], fields['date_to'])
+
     req = Request.objects.create(
         request_number=f'TMP-{uuid.uuid4().hex[:20]}',
-        user=user, request_type=request_type, reason=reason,
-        date_from=date_from, date_to=date_to, priority=priority,
-        status=Request.Status.PENDING, current_step=1,
+        user=user, request_type=request_type,
+        status=Request.Status.PENDING, current_step=1, **fields,
     )
     req.request_number = f'REQ-{timezone.localdate().year}-{req.pk:06d}'
 
-    # 7) Minimum manning check (leave types only) — advisory
     manning = None
-    if request_type.is_leave_type and date_from:
-        manning = manning_check(site, date_from, date_to, requester=user, request=req, checked_by=user)
+    if request_type.is_leave_type and req.date_from:
+        manning = manning_check(site, req.date_from, req.date_to, requester=user, request=req, checked_by=user)
         req.manning_warning = manning.is_below_minimum
     req.save(update_fields=['request_number', 'manning_warning', 'updated_at'])
 
-    # 8) Files
     save_attachments(req, files)
 
-    # 9) Notifications + audit
     notify(user, f'تم استلام طلبك رقم {req.request_number} وهو قيد المراجعة', req)
     message = f'طلب جديد بانتظار مراجعتك: {req.request_number} — {request_type.name} من {user.rank} {user.full_name}'
     if req.manning_warning:

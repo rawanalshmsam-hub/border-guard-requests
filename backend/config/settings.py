@@ -144,3 +144,5 @@ REST_FRAMEWORK['EXCEPTION_HANDLER'] = 'config.errors.custom_exception_handler'
 ATTACHMENT_ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png']
 ATTACHMENT_MAX_SIZE_MB = 5
 ATTACHMENT_MAX_FILES = 5
+# Let React read the file name of downloaded attachments
+CORS_EXPOSE_HEADERS = ['Content-Disposition']
