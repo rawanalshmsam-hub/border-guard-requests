@@ -10,7 +10,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-ic5i=th55_n8@beh=(ftj0z)rb3dsyc=a9%r#s)%4nvwj*ao-j'
-
+# Lock the account after this many wrong passwords (admin resets failed_attempts to 0)
+MAX_FAILED_LOGIN_ATTEMPTS = 5
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
