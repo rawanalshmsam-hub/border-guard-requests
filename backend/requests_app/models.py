@@ -67,9 +67,11 @@ class Request(models.Model):
     """ERD: REQUESTS — the central table."""
 
     class Priority(models.TextChoices):
-        NORMAL = 'NORMAL', 'عادي'
-        URGENT = 'URGENT', 'عاجل'
-        EMERGENCY = 'EMERGENCY', 'طارئ'
+
+        NORMAL = 'NORMAL', 'عادية'
+        URGENT = 'URGENT', 'عاجلة'
+        EMERGENCY = 'EMERGENCY', 'طارئة'
+
 
     class Status(models.TextChoices):
         PENDING = 'PENDING', 'قيد المراجعة'

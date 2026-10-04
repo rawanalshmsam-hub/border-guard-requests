@@ -9,7 +9,7 @@ from requests_app.models import ApprovalChainStep, RequestCategory, RequestType
 
 TEST_PASSWORD = 'Test@12345'
 
-# From the ERD seed data (name, icon)
+# 6 from the ERD seed + 4 from the UI design
 CATEGORIES = [
     ('خدمات الإجازات', 'briefcase'),
     ('الخدمات الإدارية', 'folder'),
@@ -17,23 +17,70 @@ CATEGORIES = [
     ('النقل والانتداب', 'truck'),
     ('الخدمات الطبية', 'shield-plus'),
     ('خدمات التدريب', 'graduation-cap'),
+    ('خدمات التصاريح', 'id-card'),
+    ('خدمات المعدات والعهد', 'package'),
+    ('خدمات المستندات', 'file-text'),
+    ('خدمات أخرى', 'plus-circle'),
 ]
 
-# (category, type name, requires_dates, requires_attachment, is_leave_type, approval chain roles in order)
+# (category, type name, requires_dates, requires_attachment, is_leave_type, approval chain roles)
+# PLACEHOLDER type names — replace in Django admin when the real list is available.
 REQUEST_TYPES = [
+    # خدمات الإجازات (5)
     ('خدمات الإجازات', 'إجازة اعتيادية', True, False, True, ['OFFICER']),
     ('خدمات الإجازات', 'إجازة اضطرارية', True, False, True, ['OFFICER']),
     ('خدمات الإجازات', 'إجازة مرضية', True, True, True, ['OFFICER']),
+    ('خدمات الإجازات', 'إجازة عرضية', True, False, True, ['OFFICER']),
+    ('خدمات الإجازات', 'تمديد إجازة', True, False, True, ['OFFICER']),
+    # الخدمات الإدارية (5)
     ('الخدمات الإدارية', 'طلب شهادة خدمة', False, False, False, ['OFFICER', 'ADMIN']),
     ('الخدمات الإدارية', 'تعديل بيانات شخصية', False, True, False, ['OFFICER', 'ADMIN']),
+    ('الخدمات الإدارية', 'طلب استئذان', True, False, False, ['OFFICER']),
+    ('الخدمات الإدارية', 'طلب تظلم', False, False, False, ['OFFICER', 'ADMIN']),
+    ('الخدمات الإدارية', 'طلب مقابلة القائد', False, False, False, ['OFFICER']),
+    # الخدمات المالية (4)
     ('الخدمات المالية', 'طلب بدل سكن', False, True, False, ['OFFICER', 'FINANCE']),
     ('الخدمات المالية', 'طلب تعريف بالراتب', False, False, False, ['FINANCE']),
+    ('الخدمات المالية', 'طلب سلفة', False, False, False, ['OFFICER', 'FINANCE']),
+    ('الخدمات المالية', 'طلب تعويض مصروفات', False, True, False, ['OFFICER', 'FINANCE']),
+    # النقل والانتداب (4)
     ('النقل والانتداب', 'طلب نقل', False, False, False, ['OFFICER', 'ADMIN']),
     ('النقل والانتداب', 'طلب انتداب', True, False, False, ['OFFICER', 'FINANCE']),
+    ('النقل والانتداب', 'طلب تبادل وظيفي', False, False, False, ['OFFICER', 'ADMIN']),
+    ('النقل والانتداب', 'طلب تمديد انتداب', True, False, False, ['OFFICER', 'FINANCE']),
+    # الخدمات الطبية (4)
     ('الخدمات الطبية', 'مراجعة طبية', True, True, False, ['OFFICER']),
+    ('الخدمات الطبية', 'طلب إحالة طبية', False, True, False, ['OFFICER']),
+    ('الخدمات الطبية', 'طلب تقرير لياقة طبية', False, False, False, ['OFFICER', 'ADMIN']),
+    ('الخدمات الطبية', 'طلب صرف علاج', False, True, False, ['OFFICER', 'FINANCE']),
+    # خدمات التدريب (4)
     ('خدمات التدريب', 'طلب دورة تدريبية', True, False, False, ['OFFICER', 'ADMIN']),
+    ('خدمات التدريب', 'طلب ابتعاث', True, True, False, ['OFFICER', 'ADMIN']),
+    ('خدمات التدريب', 'طلب شهادة دورة', False, False, False, ['ADMIN']),
+    ('خدمات التدريب', 'طلب تأجيل دورة', False, False, False, ['OFFICER', 'ADMIN']),
+    # خدمات التصاريح (4)
+    ('خدمات التصاريح', 'تصريح دخول موقع', True, False, False, ['OFFICER']),
+    ('خدمات التصاريح', 'تصريح مركبة', False, True, False, ['OFFICER']),
+    ('خدمات التصاريح', 'تصريح سفر', True, False, False, ['OFFICER', 'ADMIN']),
+    ('خدمات التصاريح', 'تصريح إدخال جهاز', False, False, False, ['OFFICER']),
+    # خدمات المعدات والعهد (4)
+    ('خدمات المعدات والعهد', 'طلب صرف عهدة', False, False, False, ['OFFICER']),
+    ('خدمات المعدات والعهد', 'طلب إرجاع عهدة', False, False, False, ['OFFICER']),
+    ('خدمات المعدات والعهد', 'بلاغ تلف عهدة', False, True, False, ['OFFICER']),
+    ('خدمات المعدات والعهد', 'طلب استبدال معدات', False, False, False, ['OFFICER']),
+    # خدمات المستندات (4)
+    ('خدمات المستندات', 'بدل فاقد بطاقة عسكرية', False, True, False, ['OFFICER', 'ADMIN']),
+    ('خدمات المستندات', 'طلب خطاب تعريف', False, False, False, ['ADMIN']),
+    ('خدمات المستندات', 'طلب نسخة قرار', False, False, False, ['ADMIN']),
+    ('خدمات المستندات', 'طلب تصديق مستند', False, True, False, ['ADMIN']),
+    # خدمات أخرى (6)
+    ('خدمات أخرى', 'طلب عام', False, False, False, ['OFFICER']),
+    ('خدمات أخرى', 'اقتراح', False, False, False, ['OFFICER']),
+    ('خدمات أخرى', 'شكوى', False, False, False, ['OFFICER', 'ADMIN']),
+    ('خدمات أخرى', 'طلب سكن', False, True, False, ['OFFICER', 'ADMIN']),
+    ('خدمات أخرى', 'طلب مساعدة اجتماعية', False, True, False, ['OFFICER', 'ADMIN']),
+    ('خدمات أخرى', 'طلب إفادة', False, False, False, ['ADMIN']),
 ]
-
 
 class Command(BaseCommand):
     help = 'Fill the database with test data (development only). Safe to run more than once.'

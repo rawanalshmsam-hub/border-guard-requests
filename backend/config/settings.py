@@ -137,3 +137,10 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
 }
+# Convert all API errors to {"code", "message"}
+REST_FRAMEWORK['EXCEPTION_HANDLER'] = 'config.errors.custom_exception_handler'
+
+# Attachment rules
+ATTACHMENT_ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png']
+ATTACHMENT_MAX_SIZE_MB = 5
+ATTACHMENT_MAX_FILES = 5
