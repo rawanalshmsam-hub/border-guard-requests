@@ -1,0 +1,238 @@
+import { useState } from 'react';
+import {
+  Alert, Box, Button, CircularProgress, IconButton, MenuItem, TextField, Typography,
+} from '@mui/material';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
+import CloseIcon from '@mui/icons-material/Close';
+import api, { getErrorMessage } from '../../api/client';
+import PageHeader from '../../components/PageHeader';
+import { getCategoryIcon } from '../../components/categoryIcons';
+import { formatFileSize } from '../../utils/format';
+
+// Same limits as the server (settings.py) — checked here first for a faster message
+const ALLOWED_EXT = ['pdf', 'jpg', 'jpeg', 'png'];
+const MAX_MB = 5;
+const MAX_FILES = 5;
+const FORM_FIELDS = ['reason', 'date_from', 'date_to', 'priority', 'files'];
+const DATE_ORDER_ERROR = 'تاريخ النهاية يجب أن يكون بعد تاريخ البداية أو مساوياً له';
+
+function Field({ label, required, children }) {
+  return (
+    <Box>
+      <Typography fontWeight={700} fontSize={14} sx={{ mb: 0.75 }}>
+        {label}{required && <Box component="span" sx={{ color: 'error.main' }}> *</Box>}
+      </Typography>
+      {children}
+    </Box>
+  );
+}
+
+function checkFiles(current, incoming) {
+  if (current.length + incoming.length > MAX_FILES) return `الحد الأقصى للمرفقات ${MAX_FILES} ملفات`;
+  for (const f of incoming) {
+    const ext = f.name.split('.').pop().toLowerCase();
+    if (!ALLOWED_EXT.includes(ext)) return `نوع الملف غير مسموح: ${f.name} (المسموح PDF, JPG, PNG)`;
+    if (f.size > MAX_MB * 1024 * 1024) return `حجم الملف أكبر من ${MAX_MB} ميجابايت: ${f.name}`;
+  }
+  return '';
+}
+
+// Number of days, counting both ends: 10 → 12 Dec = 3 days
+function daysBetween(from, to) {
+  const ms = new Date(`${to}T00:00:00`) - new Date(`${from}T00:00:00`);
+  return Math.round(ms / 86400000) + 1;
+}
+
+// Correct Arabic form of "N days"
+function daysLabel(n) {
+  if (n === 1) return 'يوم واحد';
+  if (n === 2) return 'يومان';
+  if (n <= 10) return `${n} أيام`;
+  return `${n} يوماً`;
+}
+
+/** Screen 2: the form. ① priority options come from API 4.1; ② submit = API 1.1 (fields + files together). */
+export default function RequestForm({ type, category, priorities, onBack, onSubmitted }) {
+  const [reason, setReason] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [priority, setPriority] = useState(priorities[0]?.value || 'NORMAL');
+  const [files, setFiles] = useState([]);
+  const [errors, setErrors] = useState({});
+  const [generalError, setGeneralError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const Icon = getCategoryIcon(category.icon);
+
+  const setFieldError = (field, message) => setErrors((prev) => ({ ...prev, [field]: message }));
+
+  // Re-check the date order on every change, so the error appears immediately
+  function changeDates(nextFrom, nextTo) {
+    setDateFrom(nextFrom);
+    setDateTo(nextTo);
+    setErrors((prev) => ({
+      ...prev,
+      date_from: '',
+      date_to: nextFrom && nextTo && nextTo < nextFrom ? DATE_ORDER_ERROR : '',
+    }));
+  }
+
+  const datesValid = dateFrom && dateTo && dateTo >= dateFrom;
+
+  function addFiles(fileList) {
+    const incoming = Array.from(fileList || []);
+    if (!incoming.length) return;
+    const message = checkFiles(files, incoming);
+    if (message) { setFieldError('files', message); return; }
+    setFiles((prev) => [...prev, ...incoming]);
+    setFieldError('files', '');
+  }
+
+  function validate() {
+    const e = {};
+    if (!reason.trim()) e.reason = 'سبب الطلب مطلوب';
+    if (type.requires_dates) {
+      if (!dateFrom) e.date_from = 'تاريخ البداية مطلوب';
+      if (!dateTo) e.date_to = 'تاريخ النهاية مطلوب';
+      if (dateFrom && dateTo && dateTo < dateFrom) e.date_to = DATE_ORDER_ERROR;
+    }
+    if (type.requires_attachment && !files.length) e.files = 'هذا الطلب يتطلب إرفاق مستند';
+    return e;
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setGeneralError('');
+    const found = validate();
+    setErrors(found);
+    if (Object.keys(found).length) return;
+
+    const form = new FormData();
+    form.append('request_type', String(type.id));
+    form.append('reason', reason.trim());
+    form.append('priority', priority);
+    if (type.requires_dates) {
+      form.append('date_from', dateFrom);
+      form.append('date_to', dateTo);
+    }
+    files.forEach((f) => form.append('files', f));
+
+    setSubmitting(true);
+    try {
+      const { data } = await api.post('/requests/', form);
+      onSubmitted(data);
+    } catch (err) {
+      const body = err.response?.data;
+      if (body?.field && FORM_FIELDS.includes(body.field)) {
+        setFieldError(body.field, body.message);          // highlight the exact field (E201 / E204)
+      } else {
+        setGeneralError(getErrorMessage(err));            // e.g. E203 overlap, E205 no approver
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Box component="form" onSubmit={handleSubmit} noValidate>
+      <PageHeader title="تعبئة الطلب" subtitle="أكمل البيانات المطلوبة ثم أرسل" onBack={onBack} />
+
+      <Box sx={{ maxWidth: 920, mx: 'auto', display: 'grid', gap: 2.5 }}>
+        {/* Selected type banner */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 2, borderRadius: 3,
+                   border: '1px solid', borderColor: 'primary.main', bgcolor: 'primary.light' }}>
+          <Box sx={{ width: 44, height: 44, borderRadius: 2.5, display: 'grid', placeItems: 'center',
+                     bgcolor: 'primary.main', color: '#fff' }}>
+            <Icon />
+          </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary">نوع الطلب المحدد</Typography>
+            <Typography fontWeight={800}>{type.name}</Typography>
+          </Box>
+        </Box>
+
+        {generalError && <Alert severity="error">{generalError}</Alert>}
+
+        <Field label="سبب الطلب" required>
+          <TextField
+            fullWidth multiline minRows={3} placeholder="اكتب سبب الطلب هنا..."
+            value={reason} onChange={(e) => setReason(e.target.value)}
+            error={Boolean(errors.reason)} helperText={errors.reason || `${reason.length}/1000`}
+            slotProps={{ htmlInput: { maxLength: 1000 } }}
+          />
+        </Field>
+
+        {type.requires_dates && (
+          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
+            <Field label="تاريخ البداية" required>
+              <TextField
+                fullWidth type="date" value={dateFrom}
+                onChange={(e) => changeDates(e.target.value, dateTo)}
+                error={Boolean(errors.date_from)} helperText={errors.date_from}
+                slotProps={{ htmlInput: { max: dateTo || undefined } }}
+              />
+            </Field>
+            <Field label="تاريخ النهاية" required>
+              <TextField
+                fullWidth type="date" value={dateTo}
+                onChange={(e) => changeDates(dateFrom, e.target.value)}
+                error={Boolean(errors.date_to)}
+                helperText={errors.date_to || (datesValid ? `المدة: ${daysLabel(daysBetween(dateFrom, dateTo))}` : '')}
+                slotProps={{ htmlInput: { min: dateFrom || undefined } }}
+              />
+            </Field>
+          </Box>
+        )}
+
+        <Field label="الأولوية">
+          <TextField select fullWidth value={priority} onChange={(e) => setPriority(e.target.value)}
+                     error={Boolean(errors.priority)} helperText={errors.priority}>
+            {priorities.map((p) => <MenuItem key={p.value} value={p.value}>{p.label}</MenuItem>)}
+          </TextField>
+        </Field>
+
+        <Field label={type.requires_attachment ? 'المرفقات' : 'المرفقات (اختياري)'} required={type.requires_attachment}>
+          <Box
+            component="label"
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files); }}
+            sx={{
+              display: 'block', p: 3, textAlign: 'center', cursor: 'pointer', borderRadius: 3,
+              border: '2px dashed', borderColor: errors.files ? 'error.main' : dragging ? 'primary.main' : 'divider',
+              bgcolor: dragging ? 'primary.light' : 'transparent',
+            }}
+          >
+            <input hidden type="file" multiple accept=".pdf,.jpg,.jpeg,.png"
+                   onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} />
+            <AttachFileIcon color="action" />
+            <Typography variant="body2" color="text.secondary">
+              اضغط لإرفاق مستند (PDF, JPG, PNG) — حتى {MAX_FILES} ملفات، {MAX_MB} ميجابايت للملف
+            </Typography>
+          </Box>
+          {errors.files && (
+            <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.75 }}>{errors.files}</Typography>
+          )}
+          {files.map((f, i) => (
+            <Box key={`${f.name}-${i}`} sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1, px: 1.5, py: 0.75,
+                                             borderRadius: 2, bgcolor: '#f5f8f6' }}>
+              <AttachFileIcon fontSize="small" color="action" />
+              <Typography variant="body2" noWrap sx={{ flex: 1, minWidth: 0 }}>{f.name}</Typography>
+              <Typography variant="caption" color="text.secondary">{formatFileSize(f.size)}</Typography>
+              <IconButton size="small" aria-label="حذف"
+                          onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          ))}
+        </Field>
+
+        <Button type="submit" size="large" variant="contained" disabled={submitting}
+                sx={{ py: 1.5, borderRadius: 3, background: 'linear-gradient(90deg, #1f8a5b, #2aa36b)' }}>
+          {submitting ? <CircularProgress size={24} color="inherit" /> : 'إرسال الطلب'}
+        </Button>
+      </Box>
+    </Box>
+  );
+}
