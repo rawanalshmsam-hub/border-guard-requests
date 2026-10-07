@@ -11,6 +11,8 @@ from config.errors import api_error
 from .models import User
 from .serializers import UserProfileSerializer
 from .services import log_action
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 
 class LoginView(APIView):
@@ -63,3 +65,31 @@ class MeView(APIView):
 
     def get(self, request):
         return Response(UserProfileSerializer(request.user).data)
+    
+
+class ChangePasswordView(APIView):
+    """POST {current_password, new_password} — logged-in user changes their own password."""
+
+    def post(self, request):
+        user = request.user
+        current = request.data.get('current_password', '')
+        new = request.data.get('new_password', '')
+
+        if not current or not new:
+            return api_error('E201', 'كلمة المرور الحالية والجديدة مطلوبتان', 400)
+        if not user.check_password(current):
+            log_action(user, 'CHANGE_PASSWORD_FAILED')
+            return api_error('E102', 'كلمة المرور الحالية غير صحيحة', 400, field='current_password')
+        if current == new:
+            return api_error('E201', 'كلمة المرور الجديدة يجب أن تختلف عن الحالية', 400, field='new_password')
+
+        # Django's password rules (length, too common, only numbers, too similar to user data)
+        try:
+            validate_password(new, user=user)
+        except DjangoValidationError as e:
+            return api_error('E201', ' '.join(e.messages), 400, field='new_password')
+
+        user.set_password(new)
+        user.save(update_fields=['password'])
+        log_action(user, 'CHANGE_PASSWORD')
+        return Response({'message': 'تم تغيير كلمة المرور بنجاح'})

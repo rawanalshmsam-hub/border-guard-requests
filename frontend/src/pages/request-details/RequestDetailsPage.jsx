@@ -25,6 +25,11 @@ import { formatDateRange, formatDateTime, formatFileSize } from '../../utils/for
 import CancelDialog from './CancelDialog';
 import EditDialog from './EditDialog';
 import DecisionDialog from '../review/DecisionDialog';
+import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined';
+
+
+
+
 
 const DECISION_COLORS = {
   APPROVE: { bg: '#e6f4ec', fg: '#1f8a5b' },
@@ -119,14 +124,17 @@ export default function RequestDetailsPage() {
   return (
     <Box>
       <PageHeader title={r.request_type_name} subtitle={`${r.request_number} • ${r.category_name}`} onBack={goBack} />
-
-      <Stack direction="row" spacing={1} sx={{ mb: 2.5, flexWrap: 'wrap', gap: 1 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 2.5 }}>
         <StatusChip status={r.status} label={r.status_display} />
         <PriorityChip priority={r.priority} label={r.priority_display} />
         {!isOwner && r.manning_warning && (
           <Chip size="small" label="⚠️ تنبيه الحد الأدنى للتواجد" sx={{ bgcolor: '#fdecec', color: '#c62828', fontWeight: 700 }} />
         )}
-      </Stack>
+        <Button size="small" variant="outlined" startIcon={<PrintOutlinedIcon />}
+                onClick={() => navigate(`/requests/${r.id}/print`)} sx={{ ml: 'auto' }}>
+          طباعة / حفظ PDF
+        </Button>
+      </Box>
 
       {isOwner && r.status === 'PENDING_EDIT' && (
         <Alert severity="warning" sx={{ mb: 2.5 }}

@@ -11,11 +11,16 @@ import RequestDetailsPage from './pages/request-details/RequestDetailsPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ReviewPage from './pages/review/ReviewPage';
 import CalendarPage from './pages/CalendarPage';
+import ProfilePage from './pages/ProfilePage';
+import RequestPrintPage from './pages/request-details/RequestPrintPage';
+import SettingsPage from './pages/SettingsPage';
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+            {/* Print view: logged in, but outside the app layout (no sidebar / top bar) */}
+      <Route path="/requests/:id/print" element={<ProtectedRoute><RequestPrintPage /></ProtectedRoute>} />
 
       {/* Every page inside the layout requires login */}
       <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
@@ -25,8 +30,8 @@ export default function App() {
         <Route path="services/:slug" element={<ComingSoonPage />} />   
         <Route path="requests" element={<MyRequestsPage />} />
         <Route path="requests/:id" element={<RequestDetailsPage />} />
-        <Route path="profile" element={<ComingSoonPage />} />
-        <Route path="settings" element={<ComingSoonPage />} />
+        <Route path="profile" element={<ProfilePage />} />
+        <Route path="settings" element={<SettingsPage />} />
         <Route path="help" element={<ComingSoonPage />} />
         <Route path="review" element={<ReviewerRoute><ReviewPage /></ReviewerRoute>} />
         <Route path="notifications" element={<NotificationsPage />} />

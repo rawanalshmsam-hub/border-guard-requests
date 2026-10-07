@@ -47,3 +47,19 @@ class LoginTests(TestCase):
 
     def test_protected_api_requires_a_token(self):
         self.assertEqual(APIClient().get('/api/auth/me/').status_code, 401)
+        
+    def test_change_password_rejects_wrong_current_password(self):
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        res = client.post('/api/auth/change-password/',
+                          {'current_password': 'wrong', 'new_password': 'NewStrong#2026'}, format='json')
+        self.assertEqual((res.status_code, res.data['code'], res.data['field']), (400, 'E102', 'current_password'))
+
+    def test_change_password_then_login_with_new_one(self):
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        res = client.post('/api/auth/change-password/',
+                          {'current_password': PASSWORD, 'new_password': 'NewStrong#2026'}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(self.login('1001', PASSWORD).status_code, 401)          # old one no longer works
+        self.assertEqual(self.login('1001', 'NewStrong#2026').status_code, 200)
