@@ -6,15 +6,13 @@ import AttachFileIcon from '@mui/icons-material/AttachFile';
 import CloseIcon from '@mui/icons-material/Close';
 import api, { getErrorMessage } from '../../api/client';
 import PageHeader from '../../components/PageHeader';
-import { getCategoryIcon } from '../../components/categoryIcons';
+import CategoryIcon from '../../components/CategoryIcon';
+
+import { DATE_ORDER_ERROR, daysBetween, daysLabel } from '../../utils/dates';
+import { ACCEPT, MAX_FILES, MAX_MB, checkFiles } from '../../utils/files';
 import { formatFileSize } from '../../utils/format';
 
-// Same limits as the server (settings.py) — checked here first for a faster message
-const ALLOWED_EXT = ['pdf', 'jpg', 'jpeg', 'png'];
-const MAX_MB = 5;
-const MAX_FILES = 5;
 const FORM_FIELDS = ['reason', 'date_from', 'date_to', 'priority', 'files'];
-const DATE_ORDER_ERROR = 'تاريخ النهاية يجب أن يكون بعد تاريخ البداية أو مساوياً له';
 
 function Field({ label, required, children }) {
   return (
@@ -25,30 +23,6 @@ function Field({ label, required, children }) {
       {children}
     </Box>
   );
-}
-
-function checkFiles(current, incoming) {
-  if (current.length + incoming.length > MAX_FILES) return `الحد الأقصى للمرفقات ${MAX_FILES} ملفات`;
-  for (const f of incoming) {
-    const ext = f.name.split('.').pop().toLowerCase();
-    if (!ALLOWED_EXT.includes(ext)) return `نوع الملف غير مسموح: ${f.name} (المسموح PDF, JPG, PNG)`;
-    if (f.size > MAX_MB * 1024 * 1024) return `حجم الملف أكبر من ${MAX_MB} ميجابايت: ${f.name}`;
-  }
-  return '';
-}
-
-// Number of days, counting both ends: 10 → 12 Dec = 3 days
-function daysBetween(from, to) {
-  const ms = new Date(`${to}T00:00:00`) - new Date(`${from}T00:00:00`);
-  return Math.round(ms / 86400000) + 1;
-}
-
-// Correct Arabic form of "N days"
-function daysLabel(n) {
-  if (n === 1) return 'يوم واحد';
-  if (n === 2) return 'يومان';
-  if (n <= 10) return `${n} أيام`;
-  return `${n} يوماً`;
 }
 
 /** Screen 2: the form. ① priority options come from API 4.1; ② submit = API 1.1 (fields + files together). */
@@ -62,7 +36,6 @@ export default function RequestForm({ type, category, priorities, onBack, onSubm
   const [generalError, setGeneralError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const Icon = getCategoryIcon(category.icon);
 
   const setFieldError = (field, message) => setErrors((prev) => ({ ...prev, [field]: message }));
 
@@ -144,7 +117,7 @@ export default function RequestForm({ type, category, priorities, onBack, onSubm
                    border: '1px solid', borderColor: 'primary.main', bgcolor: 'primary.light' }}>
           <Box sx={{ width: 44, height: 44, borderRadius: 2.5, display: 'grid', placeItems: 'center',
                      bgcolor: 'primary.main', color: '#fff' }}>
-            <Icon />
+            <CategoryIcon name={category.icon} />
           </Box>
           <Box>
             <Typography variant="caption" color="text.secondary">نوع الطلب المحدد</Typography>
@@ -204,7 +177,7 @@ export default function RequestForm({ type, category, priorities, onBack, onSubm
               bgcolor: dragging ? 'primary.light' : 'transparent',
             }}
           >
-            <input hidden type="file" multiple accept=".pdf,.jpg,.jpeg,.png"
+            <input hidden type="file" multiple accept={ACCEPT}
                    onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} />
             <AttachFileIcon color="action" />
             <Typography variant="body2" color="text.secondary">

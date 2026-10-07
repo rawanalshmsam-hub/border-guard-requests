@@ -16,6 +16,7 @@ import StatusChip from '../components/StatusChip';
 import { getCategoryIcon } from '../components/categoryIcons';
 import { EXTRA_SERVICES } from '../components/extraServices';
 import { formatDateRange, formatDateTime } from '../utils/format';
+import { eventTitle } from '../utils/events';
 
 const STATS = [
   { key: 'under_review', label: 'قيد المراجعة', color: '#d68a1f' },
@@ -162,11 +163,6 @@ function LatestNotifications({ state, onOpenAll, onOpenItem }) {
       {body}
     </Box>
   );
-}
-
-function eventTitle(e) {
-  if (e.is_mine) return e.request_type_name || e.title;
-  return `${e.title} — ${[e.person.rank, e.person.full_name].filter(Boolean).join(' ')}`;
 }
 
 // Mini calendar (API 4.6) + upcoming events (API 4.7)
