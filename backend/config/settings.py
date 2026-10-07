@@ -3,14 +3,24 @@ Django settings for config project.
 Border Guard Personnel Requests Platform.
 """
 
-from datetime import timedelta  # added: for JWT token lifetimes
+import os
+from datetime import timedelta
 from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-ic5i=th55_n8@beh=(ftj0z)rb3dsyc=a9%r#s)%4nvwj*ao-j'
-# Lock the account after this many wrong passwords (admin resets failed_attempts to 0)
+# Secrets come from backend/.env (never committed). See .env.example.
+load_dotenv(BASE_DIR / '.env')
+
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    raise ImproperlyConfigured('DJANGO_SECRET_KEY is missing: copy .env.example to .env and set a key.')
+
+DEBUG = os.environ.get('DJANGO_DEBUG', 'False') == 'True'# Lock the account after this many wrong passwords (admin resets failed_attempts to 0)
 MAX_FAILED_LOGIN_ATTEMPTS = 5
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
