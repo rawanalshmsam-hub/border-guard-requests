@@ -10,6 +10,7 @@ import MyRequestsPage from './pages/MyRequestsPage';
 import RequestDetailsPage from './pages/request-details/RequestDetailsPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ReviewPage from './pages/review/ReviewPage';
+import CalendarPage from './pages/CalendarPage';
 
 export default function App() {
   return (
@@ -19,7 +20,7 @@ export default function App() {
       {/* Every page inside the layout requires login */}
       <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
         <Route index element={<HomePage />} />
-        <Route path="calendar" element={<ComingSoonPage />} />
+        <Route path="calendar" element={<CalendarPage />} />
         <Route path="requests/new" element={<NewRequestPage />} />
         <Route path="services/:slug" element={<ComingSoonPage />} />   
         <Route path="requests" element={<MyRequestsPage />} />
